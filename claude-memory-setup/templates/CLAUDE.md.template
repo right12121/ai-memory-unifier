@@ -1,0 +1,111 @@
+# Claude Global Instructions (loaded in every Claude Code + CoWork session)
+
+<!--
+  This is a SKELETON. The claude-memory-setup skill fills each section
+  from your existing scattered memory files. Target: ≤ 150 lines.
+  Each comment below describes the intent; Claude fills in actual content.
+-->
+
+## Identity
+
+<!--
+  Name, alternative names / nicknames, role, company, timezone,
+  language(s), contact email. Stable facts used every session.
+  Target: 5-10 lines.
+-->
+
+## People
+
+<!--
+  Short table of people the user interacts with regularly.
+  Used by meeting transcription speaker ID and project context.
+  Drop this section if user has no need.
+-->
+
+| Who | Role | Notes |
+|-----|------|-------|
+
+## Speaker Identification (optional)
+
+<!--
+  Only if user uses meeting transcription (Granola, Feishu Minutes, etc.)
+  Rules for identifying "me" vs others in transcripts.
+-->
+
+## Active Projects
+
+<!--
+  One line per current project. Link to skill if the project has one.
+  Typical 3-6 items. Keep each line < 100 chars.
+-->
+
+## Communication
+
+<!--
+  - Response language preference (e.g., "reply in Chinese unless user writes English")
+  - Format preferences (markdown, no PDF/Docx/PPTX, etc.)
+  - Brevity / trailing summaries
+  - Meeting recording tools in use
+-->
+
+## Work Style
+
+<!--
+  - Claude's engagement style (ask first? just do? clarify ambiguity?)
+  - High-level code / product / writing preferences
+  - Any "don't assume X" rules
+-->
+
+## Tool Constraints
+
+<!--
+  Hard rules for specific tools. One subsection per tool family.
+  Only absolute constraints here; implementation detail goes in that tool's skill.
+-->
+
+### <Tool 1>
+
+<!-- e.g., Feishu API, Computer Use, Browser Automation -->
+
+### <Tool 2>
+
+## Active Configs (optional)
+
+<!--
+  Terse one-liners about current settings (model, effort level, custom hooks).
+  Pointer to settings.json rather than duplicating.
+-->
+
+## 🔴 Memory Mechanism (applies to all sessions)
+
+Persistent memory has exactly **two** authoritative locations:
+
+1. **This file** `~/.claude/CLAUDE.md` — cross-project, every-session information
+2. **Skill files** `~/.claude/skills/<name>/SKILL.md` — topic-specific, loaded on demand
+   - `~/.codex/skills/<name>` symlinks point at the same source (Codex reads them)
+   - Claude Code + Codex share one source of truth; CoWork requires manual paste
+
+**AutoMemory products** (`~/.claude/projects/*/memory/*.md`):
+- Acknowledge existence (harness behavior, can't be banned from this file)
+- Not authoritative: daily Loop 2 scans, classifies, suggests migration
+- Claude should not actively write manually to `projects/*/memory/` (AutoMemory's auto-writes are fine)
+
+**Disallowed**:
+- New `CLAUDE.md` files inside project subdirectories (except existing project technical docs)
+- Scattered note files, log files, TODO.md, etc.
+
+## Project-Level CLAUDE.md (preserved)
+
+<!--
+  List project-root CLAUDE.md files that are intentionally kept (technical project docs).
+  This skill won't touch them on future runs.
+-->
+
+## Reorg History
+
+<!--
+  Pointer to the most recent archive directory.
+  Updated automatically by this skill on each run.
+-->
+
+- `~/.claude/archive-<YYYY-MM-DD>/` — last reorg: <date>. See `manifest-<date>.json` for per-file recovery.

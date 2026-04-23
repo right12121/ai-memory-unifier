@@ -1,0 +1,38 @@
+{
+  "reorg_date": "__YYYY_MM_DD__",
+  "reorg_version": "1.0",
+  "source_tool_versions": {
+    "claude_code": "__VERSION__",
+    "codex": "__VERSION_OR_null__",
+    "os": "__darwin_version_OR_linux__"
+  },
+  "files": [
+    {
+      "source": "__absolute source path__",
+      "archive": "__absolute archive path__",
+      "sha256": "__hex digest__",
+      "size": 0,
+      "mtime": "__ISO_DATETIME__",
+      "category": "__one of: identity, preference, project, feedback, reference, auto-memory, workflow, anti-pattern__",
+      "decision": "__one of: migrated-to-claude-md, migrated-to-skill-<name>, new-skill-<name>, kept, archived-only__",
+      "decision_target": "__optional: section path, e.g. ~/.claude/CLAUDE.md#Identity__",
+      "migrated_at": null
+    }
+  ],
+  "claude_md": {
+    "old_sha256": "",
+    "new_sha256": "",
+    "new_lines": 0
+  },
+  "summary": {
+    "total_files": 0,
+    "by_decision": {
+      "migrated-to-claude-md": 0,
+      "migrated-to-skill": 0,
+      "new-skill": 0,
+      "kept": 0,
+      "archived-only": 0
+    },
+    "total_bytes": 0
+  }
+}
