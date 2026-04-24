@@ -1,191 +1,218 @@
-# Phase 0 — Diagnostic inventory (across all AI products)
+# Phase 0 — Kickoff interview + diagnostic inventory
 
-Read-only scan. Never write anything during this phase.
+Phase 0 has two parts:
 
-## Goal
+**Part A — Interview** (interactive, no file writes yet): ask the user upfront which AI products they use, so we know what to scan and what to eventually sync to. User answers in natural language. Claude does the config.
 
-Produce a single diagnostic report that tells the user exactly what memory artifacts exist on their machine, across **every AI product they use**, and where each one is. This is the primary input for Phase 1 (classification).
+**Part B — Inventory** (read-only filesystem scan): guided by the interview answers, list the actual memory files present on disk.
 
-## Before scanning: load the product registry
+Never write anything during Phase 0. The goal is to build a complete picture of the starting point and a confirmed product list before anything else happens.
 
-Load `references/product-registry.md` — the canonical list of AI agents / CLIs / assistants we know how to detect and read. Use it as the scanning baseline.
+---
 
-## Scan order
+## Part A — Kickoff interview
 
-1. **Always-scan** — Claude Code itself (we're guaranteed to be running inside it)
-2. **Registry sweep** — iterate `references/product-registry.md` → detect each product on filesystem; skip those not found
-3. **User-mentioned** — ask the user for any product you didn't cover; read their specified paths too
-4. **Out-of-scope acknowledgment** — list server-side products (Cowork, ChatGPT, etc.) as "detected but out of scope" if the user uses them
+Before any scanning, **always** have this conversation with the user. Don't skip straight to filesystem detection — the user may not have all products actually installed locally, or may have tools we can't detect.
 
-## Step 1 — Claude Code (always)
+### Step A.1 — Show what's automatically detectable
 
-### 1a. Global CLAUDE.md
+Claude silently runs detection first (filesystem checks for each product in `references/product-registry.md`). Then reports:
+
+> **I'll be unifying your AI memory. Here's what I detected on this machine**:
+>
+> Products you have installed (I'll scan these for memory):
+> - Claude Code (always)
+> - [Codex CLI, Gemini CLI, Cursor, Aider, ... — whichever actually exist]
+>
+> For each **Tier-1** one (raw-markdown global file), I can also set up **auto-sync** so when CLAUDE.md changes, it propagates automatically. These are typically: Codex, Gemini CLI, Windsurf.
+
+### Step A.2 — Ask about products we can't auto-detect
+
+> **Are there any AI products you use that I didn't detect?** They could be:
+>
+> - Internal / company-specific tools
+> - Regional products like KimiClaw, Hermes, Doubao, Tongyi Lingma
+> - Forks or rebranded agents
+> - Tools that store memory somewhere unusual
+>
+> If yes, tell me the name (short, for the ID) and the path to its memory file. Example:
+> > "I use KimiClaw, its rules are at `~/.kimi/RULES.md`"
+
+Collect from user. For each:
+- **Short ID** (kebab-case, e.g., `kimi-claw`, `my-internal-agent`)
+- **Absolute path** to the memory file (expand `~` on their behalf)
+- **Format**: ask "is it a single markdown file that represents the product's global instructions?" — if yes, treat as `raw-md` (sync-capable). If JSON/YAML/project-local, treat as scan-only for now.
+
+### Step A.3 — Acknowledge server-side products
+
+> **I can't read server-side products locally** (no file to scan), but if you use any of these, tell me and I'll include them in the final report so you remember to update them manually:
+>
+> - Claude Desktop Cowork Global Instructions
+> - ChatGPT custom instructions (web)
+> - Claude.ai preferences
+> - Gemini custom instructions (web)
+> - GitHub Copilot / Workspace
+
+User confirms which they use. These become "note-only" entries.
+
+### Step A.4 — Confirm sync target subset
+
+For products confirmed in A.1 and A.2 that are **Tier-1 writable**, ask:
+
+> I can set up auto-sync for these going forward (daily Loop 1 will update them whenever `~/.claude/CLAUDE.md` changes):
+>
+> - codex → ~/.codex/AGENTS.md
+> - gemini-cli → ~/.gemini/GEMINI.md
+> - windsurf → ~/.codeium/windsurf/memories/global_rules.md
+> - kimi-claw → ~/.kimi/RULES.md  *(user-added)*
+>
+> Is this correct? Anything to exclude?
+
+User says yes, or picks a subset. The final list is `sync_target_list`.
+
+### Step A.5 — Build internal lists
+
+After the interview, Claude has three internal lists (not yet written to disk):
+
+1. **`scan_sources`** — what Part B will read from (everything confirmed in A.1 + A.2)
+2. **`sync_target_list`** — what Phase 6 will write to state.json for Loop 1 (subset of scan_sources that's Tier-1 writable + user-approved)
+3. **`note_only`** — server-side products to mention in the final report
+
+Present all three lists to the user and ask confirmation:
+
+> **Ready to start the scan**. Here's what I'll do:
+>
+> **Scan** (read-only, Phase 0): [scan_sources]
+> **Future sync** (set up in Phase 6): [sync_target_list]
+> **Noted for manual handling** (can't touch): [note_only]
+>
+> Looks right?
+
+After confirmation, proceed to Part B.
+
+---
+
+## Part B — Filesystem inventory
+
+For each item in `scan_sources`, read the memory files. Logic is the same as before (file counts, dedup, etc.).
+
+### B.1 — Claude Code (always)
 
 ```bash
-if [ -f ~/.claude/CLAUDE.md ]; then
-  wc -l ~/.claude/CLAUDE.md
-  wc -c ~/.claude/CLAUDE.md
-  grep -c '^## ' ~/.claude/CLAUDE.md  # section count
-fi
-```
+# Global CLAUDE.md
+[ -f ~/.claude/CLAUDE.md ] && wc -l ~/.claude/CLAUDE.md && wc -c ~/.claude/CLAUDE.md
 
-Record: exists? line count? byte count? section count?
-
-### 1b. AutoMemory projects
-
-```bash
+# AutoMemory projects (dedup symlinked dirs)
 find ~/.claude/projects -maxdepth 2 -type d -name memory 2>/dev/null
-```
 
-For each `memory/` dir:
-
-```bash
-ls -la <memory_dir>
-find <memory_dir> -maxdepth 1 -name '*.md' -type f | wc -l
-du -sh <memory_dir>
-```
-
-**Deduplicate**: macOS is case-insensitive; project paths may be symlinked (e.g., `-Users-<you>-love` → `-Users-<you>-mine-Love`). Use `readlink` and inode comparison.
-
-For each unique memory dir, record: project path (decoded), file count, total size, oldest + newest mtime.
-
-### 1c. Existing skills
-
-```bash
+# Existing skills (real dirs only)
 ls -la ~/.claude/skills/
-```
 
-Distinguish real directories (user-managed personal skills) from symlinks (plugin mirrors). For each real skill, `head -10 <skill>/SKILL.md` to extract `name:` and description.
-
-### 1d. Project-root CLAUDE.md files
-
-Ask the user which roots they use, or default to:
-
-```bash
+# Project-root CLAUDE.md
 find ~ -maxdepth 3 -name 'CLAUDE.md' -type f -not -path '*/.claude/*' -not -path '*/node_modules/*' 2>/dev/null
-```
 
-(Depth-3 cap to avoid node_modules scans.)
-
-### 1e. settings.json flags
-
-```bash
-if [ -f ~/.claude/settings.json ]; then
-  python3 -c "
+# settings.json flags (read-only)
+python3 -c "
 import json
 s = json.load(open('$HOME/.claude/settings.json'))
-print('autoMemoryEnabled:', s.get('autoMemoryEnabled', 'default (on)'))
-print('autoDreamEnabled:', s.get('autoDreamEnabled', 'default'))
-print('model:', s.get('model', 'default'))
-print('enabledPlugins:', list((s.get('enabledPlugins') or {}).keys()))
-print('has hooks:', bool(s.get('hooks')))
+for k in ['autoMemoryEnabled', 'autoDreamEnabled', 'model']:
+    print(f'{k}:', s.get(k, 'default'))
 "
-fi
 ```
 
-Record settings. Never mutate.
+### B.2 — Confirmed other products
 
-## Step 2 — Iterate the product registry
+For each product in `scan_sources` that's in `product-registry.md`:
 
-For each product listed in `references/product-registry.md` under "Products with scannable local memory":
+- Run its detection check
+- Read its memory file(s) per registry entry
+- Record size, mtime, content summary
 
-1. **Detection**: run the detection check (path exists / binary on PATH / etc.)
-2. **Skip if not installed**
-3. **Read memory files** listed for that product
-4. **Record** in the diagnostic report
+For user-added products (not in registry):
 
-Products to check (from registry, v1.0):
+- Read the path the user provided
+- Ask user "what kind of data is this?" if format is unclear
+- Record as-is
 
-- Codex CLI (`~/.codex/`)
-- Cursor (`~/Library/Application Support/Cursor/`, `.cursorrules`, `.cursor/rules/`)
-- Aider (`~/.aider.conf.yml`)
-- Continue (`~/.continue/`)
-- Cline (VS Code globalStorage)
-- Windsurf / Codeium (`~/.codeium/windsurf/`)
-- Zed (`~/.config/zed/`)
-- Gemini CLI (`~/.gemini/`)
-- Amp / Sourcegraph (project `AGENT.md`, `~/.amp/`)
-- Qclaw / OpenClaw (`~/.qclaw/workspace/`, `~/.openclaw/workspace/`)
+### B.3 — settings flags
 
-For the full list and detection details, see `references/product-registry.md`.
+Already covered in B.1 for Claude Code. For other products, note their config flags if relevant (e.g., Codex `model` setting).
 
-## Step 3 — Ask the user about additional products
-
-After the automatic sweep, ask:
-
-> I scanned for common AI products and found: [list].
-> Do you regularly use any AI agent / CLI / assistant I might have missed?
-> Examples: Hermes, KimiClaw, Doubao, Tongyi Lingma, internal company tool, etc.
-> If yes, point me at the directory or file and I'll include it.
-
-For each user-mentioned product, ask for the path, read it, add to findings. Do **not** assume formats — ask "what kind of data is in that file?" if it's not obvious.
-
-## Step 4 — Acknowledge out-of-scope products
-
-Note (but do not try to read) server-side products the user has mentioned or you suspect they use:
-
-- **Cowork Global Instructions** — stored in Claude Desktop's leveldb, server-synced. Not scannable locally. If user uses Cowork, call out in the report that Cowork's Global Instructions won't be auto-pulled into the consolidation.
-- **ChatGPT custom instructions** — stored at `chatgpt.com/settings`. Manual only.
-- **Claude.ai preferences** — server-side.
-- **GitHub Copilot / Workspace** — server-side.
-
-Ask the user if they want to **manually paste** content from any server-side source into the consolidation. If yes, they paste it directly in chat, and treat it as another input.
+---
 
 ## Diagnostic report format
 
-Present as markdown, scannable top-to-bottom:
+After both parts, present:
 
 ```markdown
 # 📋 AI Memory Inventory — <today>
 
-## Claude Code (primary)
-- `~/.claude/CLAUDE.md`: X lines / Y bytes / sections: [Identity, People, …]
-- AutoMemory:
-  | Project | Files | Size | Latest |
-  |---|---|---|---|
-  | `~/mine/thebrainly` | 10 | 42 KB | 2026-04-15 |
-- Existing skills: <list with name + 1-line desc>
-- Project-root CLAUDE.md: <list>
-- Settings flags: autoMemoryEnabled=on, autoDreamEnabled=true, model=opus[1m]
+## Products in scope
+- **Claude Code** (primary) — will be the authority after migration
+- **Codex CLI** — detected, will sync + migrate
+- **Cursor** — detected, will scan only (project-local rules)
+- **KimiClaw** — user-provided, will sync to ~/.kimi/RULES.md
+- ...
 
-## Codex CLI
-- Detected: ✅ `~/.codex/`
-- `AGENTS.md`: empty
-- Skills: .system, find-skills, playwright (system only)
+## Claude Code
+- `~/.claude/CLAUDE.md`: X lines / Y bytes / sections: [...]
+- AutoMemory: N files across M projects, ~K KB total
+- Existing skills: [list]
+- Project-root CLAUDE.md: [list]
+- Settings: autoMemoryEnabled=<v>, autoDreamEnabled=<v>, model=<v>
 
-## Cursor
-- Detected: ✅ `~/Library/Application Support/Cursor/`
-- Project rules: `.cursorrules` in 2 projects (`~/proj-a`, `~/proj-b`)
-- Rules content: <summary>
+## <Other scanned products>
+- [same structure per product]
 
-## <other detected products>
-...
+## Sync targets (Phase 6 will register these)
+- codex → ~/.codex/AGENTS.md (auto)
+- gemini-cli → ~/.gemini/GEMINI.md (auto)
+- windsurf → ~/.codeium/windsurf/memories/global_rules.md (auto)
+- kimi-claw → ~/.kimi/RULES.md (user-added)
 
-## User-mentioned products
-- <product name>: <path>
-- <content summary>
-
-## Out of scope (server-side)
-- Cowork Global Instructions: not readable locally. You use this — note that whatever's in Cowork Settings won't be included.
-- ChatGPT custom instructions: you mentioned you set some. Paste here if you want to include in the consolidation, or skip.
+## Note-only (server-side, can't touch locally)
+- Cowork Global Instructions
+- ChatGPT custom instructions (web)
 
 ## Flags for attention
-- 🔴 `~/mine/CLAUDE.md` + `~/.claude/CLAUDE.md` overlap 80% → merge candidate
-- 🟡 Cursor `.cursorrules` in ~/proj-a says "use Python 3.12", but `~/.claude/CLAUDE.md` says "Python 3.11" — conflict
-- 🟡 AutoMemory total = 54 KB / 14 files (below 500 KB alert threshold)
+- 🔴 conflicts found: ...
+- 🟡 ...
 
 ## Numbers
 - Total memory files found: N
 - Total bytes: X KB
-- Estimated consolidation effort: <small/medium/large>
+
+Ready to proceed to Phase 1 (analyze + propose)?
 ```
 
-End with: **"Ready to proceed to Phase 1 (analysis & proposal)?"**
+---
 
 ## Edge cases
 
-- **User has zero memory artifacts anywhere**: report "Nothing to migrate. Use `templates/CLAUDE.md.template` as a starter?" Offer to scaffold a blank CLAUDE.md if they want.
-- **User has only one product**: the registry sweep is fast (everything else skipped). Proceed normally.
-- **User has a product not in the registry, and the paths look unusual**: ask for confirmation before reading (privacy check); read only files they explicitly point at.
-- **Symlinks across skills**: trace them once; record original target in manifest.
-- **User doesn't know what paths their internal tool uses**: offer to grep their home dir for recently-modified `.md` or config files, with explicit permission.
+### User says "just scan everything, I don't care"
+
+Skip the interview detail; use filesystem auto-detection only. Note in the report which assumptions were made. This is fine for quick runs but loses the chance to add custom tools.
+
+### User has zero memory anywhere
+
+Report "nothing to migrate" and offer `templates/CLAUDE.md.template` as a starter. Still set up Loop 1 + state.json so future runs work.
+
+### User mentions a product they think is Tier-1 but it's actually structured config
+
+Politely correct: "That tool stores its rules in a JSON config; I can read it during scan but can't auto-sync to it yet (Tier 2 support planned). OK to scan-only for now?"
+
+### User refuses to answer the interview
+
+Fine — auto-detect via registry, use those as both scan_sources and sync_target_list. Log that the interview was skipped so we don't miss anything critical on later runs.
+
+### User mentions a product we don't know; path they give doesn't exist
+
+Ask: "the path `~/.foo/memory.md` doesn't exist — did you mean something else? Or is this a product that hasn't been used yet and will create the file later?"
+
+If "hasn't been used yet": **still add to sync_target_list**. When the file gets created, Loop 1 picks it up automatically (next run after parent dir exists).
+
+---
+
+## Key principle: Claude writes the config, not the user
+
+After this interview, when Phase 6 populates `~/.claude/reorg-log/state.json`, Claude does it directly. The user never needs to hand-edit JSON. The only exception: post-setup tweaks (enable/disable/remove a target later, after the skill has finished) — see `references/custom-sync-targets.md` for those advanced operations.

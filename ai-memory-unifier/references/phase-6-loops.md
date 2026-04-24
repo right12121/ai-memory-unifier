@@ -68,26 +68,47 @@ Per-target fields:
 
 **Key property**: each target is independent. A conflict on Windsurf doesn't block Codex from syncing.
 
-### Phase 6 — ask about user custom targets
+### Sync targets come from Phase 0's interview
 
-Before registering the Loop, Claude should prompt:
+Phase 0 (Part A — kickoff interview) already collected `sync_target_list` from the user. Phase 6 just writes it into `~/.claude/reorg-log/state.json` and registers the scheduled task. **Do not re-ask the user here** — if you need to adjust, go back to Phase 0.
 
-> **Sync targets detected**: codex (installed), gemini-cli (not installed, will skip), windsurf (installed).
->
-> Any other product you want auto-synced by this Loop? If it has a single global markdown file (one absolute path) that acts as its "global instructions", I can add it.
->
-> Examples: an internal company agent, KimiClaw, Hermes, a forked tool. Skip if you're not sure.
+**Writing state.json from `sync_target_list`**:
 
-If the user mentions one, collect:
-- Short ID (kebab-case, e.g., `hermes`)
-- Absolute file path
-- Confirm it's a **raw-markdown** file (not JSON/YAML)
+```python
+import json, datetime as dt
+from pathlib import Path
 
-Then add it to state.json by running the snippet in `references/custom-sync-targets.md`. No need to re-register the Loop — it picks up new state.json entries on next run.
+state_path = Path.home() / ".claude/reorg-log/state.json"
+# sync_target_list is an in-memory list of dicts from Phase 0, e.g.:
+# [
+#   {"id": "codex",       "path": "~/.codex/AGENTS.md"},
+#   {"id": "gemini-cli",  "path": "~/.gemini/GEMINI.md"},
+#   {"id": "kimi-claw",   "path": "~/.kimi/RULES.md"},
+# ]
+
+targets = {}
+for item in sync_target_list:
+    targets[item["id"]] = {
+        "path": item["path"],
+        "format": "raw-md",
+        "enabled": True,
+        "last_target_hash": "",
+        "last_synced_at": None,
+    }
+
+state = {
+    "version": 2,
+    "last_claude_hash": "",
+    "targets": targets,
+    "initialized_at": dt.datetime.now().isoformat(),
+}
+state_path.parent.mkdir(parents=True, exist_ok=True)
+json.dump(state, open(state_path, "w"), indent=2)
+```
 
 ### Tier 2 / Tier 3 targets
 
-Not handled by this loop in v1.2. See `references/product-registry.md` for the tier classification and planned timeline (v1.3+).
+Not handled by this loop in v1.3. See `references/product-registry.md` for the tier classification and planned timeline.
 
 ---
 

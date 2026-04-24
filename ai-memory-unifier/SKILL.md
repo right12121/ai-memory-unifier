@@ -115,13 +115,17 @@ Append to `~/.claude/reorg-log/<date>.md` as each phase completes. The log is th
 
 ---
 
-## Phase 0 — Diagnose
+## Phase 0 — Kickoff interview + Diagnose
 
-**Intent**: enumerate every memory-relevant file/location across the product registry; characterize the user's starting point.
+**Intent**: two-part phase.
+- **Part A (interview)**: before any scanning, ask the user upfront what AI products they use — including ones not in our registry. Build internal `scan_sources` + `sync_target_list` + `note_only` lists. Also confirm which detected Tier-1 products they want auto-synced going forward.
+- **Part B (inventory)**: read-only filesystem scan guided by Part A's answers.
 
 **Load**: `references/phase-0-diagnose.md` + `references/product-registry.md`
 
-**Output**: a diagnostic report (printed to chat) listing every detected product and its memory files. Concludes by asking the user about additional products not in the registry. Ask the user to confirm before Phase 1.
+**Output**: a diagnostic report listing products in scope, their memory files, sync targets set up in Phase 6, and server-side products noted for manual handling. Ask the user to confirm before Phase 1.
+
+**Key principle**: the interview is where the user tells Claude what to sync to. Users **never hand-edit** `state.json`. Claude writes the config based on the natural-language conversation in Part A.
 
 ---
 
@@ -225,14 +229,15 @@ Exception: if the user explicitly asks "strip Cursor rules I've migrated to CLAU
 **Loop 1 — Memory Sync** (multi-target, data-driven):
 - Cron: `17 9 * * *` (daily ~09:17)
 - Reads `~/.claude/CLAUDE.md`; on change, writes to every enabled target in `state.json` with header comment
-- Built-in Tier-1 targets (auto-populated first run):
+- **Targets were decided during Phase 0's interview** (Part A): built-in Tier-1 products user confirmed + any user-added custom raw-md targets. Phase 6 just writes them into `state.json` — no new questions to user here.
+- Built-in Tier-1 baseline (auto-included if user has them):
   - `~/.codex/AGENTS.md` (Codex CLI)
   - `~/.gemini/GEMINI.md` (Gemini CLI)
   - `~/.codeium/windsurf/memories/global_rules.md` (Windsurf)
-- **User custom targets**: during Phase 6, ask the user if they use any product not in the built-in list that has a single global markdown file — add it to `state.json` so Loop 1 syncs it too. See `references/custom-sync-targets.md`.
 - Per-target hash state; per-target fail-closed on external edit
 - Runs silently (no user notification)
 - Tier 2 / 3 targets (JSON/YAML fields, project-local) planned for future versions
+- Post-setup tweaks (add / disable / remove): see `references/custom-sync-targets.md`
 
 **Loop 2 — Daily reorg scan**:
 - Cron: `23 21 * * *` (daily ~21:23)

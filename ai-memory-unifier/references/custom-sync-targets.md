@@ -1,24 +1,48 @@
-# Custom sync targets
+# Custom sync targets — post-setup reference
 
-**The built-in registry only knows about mainstream products.** If you use a product we don't detect — an internal company agent, a regional tool like KimiClaw / Hermes, a fork, or something brand-new — you can still get it auto-synced by adding it to `~/.claude/reorg-log/state.json`.
+> **Primary path**: tell Claude during Phase 0 (the kickoff interview).
+> Claude will write `state.json` for you — you never need to touch JSON by hand during normal setup.
+>
+> This doc is for **after** setup: tweaking, adding, disabling, removing targets
+> later on. You don't read this during your first run.
 
-## When this works
+Loop 1 iterates every entry in `~/.claude/reorg-log/state.json` → `targets`. You can tell Claude to add, remove, or toggle a target any time — just say:
 
-Only for **Tier 1** style targets:
+> "Add KimiClaw as a sync target at `~/.kimi/RULES.md`"
+> "Disable gemini-cli sync for now"
+> "Remove the my-internal-agent target"
+> "What sync targets do I have right now?"
 
-- One global markdown file
-- At a known absolute path (or `~/` / `$VAR` expandable)
-- You're OK with the file being overwritten (with a `<!-- synced from ... -->` header) whenever `~/.claude/CLAUDE.md` changes
+Claude will do the config edit itself. You don't have to run Python.
 
-If your tool uses a JSON/YAML config field, or needs per-project files, this path does **not** work yet — see product-registry.md for the tier scheme.
+The rest of this doc is a **reference** for the underlying schema + manual snippets, in case:
+- You're debugging and want to see what the file looks like
+- You want to script a change yourself
+- Claude isn't available (offline tweak)
 
-## How it works under the hood
+---
 
-Loop 1 (`memory-sync-agents` scheduled task) iterates **every entry** in `state.json` → `targets`. There's no hardcoded list in the loop. Built-ins are just defaults populated on first run. Custom entries you add are treated identically.
+## state.json target schema
 
-## Add a custom target
+```json
+"<target-id>": {
+  "path": "<absolute-or-tilde-expandable path>",
+  "format": "raw-md",
+  "enabled": true,
+  "last_target_hash": "<SHA256, managed by loop>",
+  "last_synced_at": "<ISO datetime, managed by loop>"
+}
+```
 
-Pick a short kebab-case ID (e.g., `hermes`, `kimi-claw`, `my-internal-agent`) and run:
+Fields:
+- **`path`** — absolute path (supports `~` and `$VAR`)
+- **`format`** — only `raw-md` is handled by Loop 1 in v1.3. Future: `json-field`, `yaml-field`, `project-md`
+- **`enabled`** — `false` = temporarily skip without removing
+- **`last_target_hash`** / **`last_synced_at`** — internal, don't edit manually
+
+## Manual snippets (for the rare case you want to bypass Claude)
+
+### Add a target
 
 ```bash
 python3 <<'PY'
@@ -38,34 +62,24 @@ s["targets"][NAME] = {
     "last_synced_at": None,
 }
 json.dump(s, open(state_path, "w"), indent=2)
-print(f"Added target: {NAME} → {PATH}")
+print(f"Added: {NAME}")
 PY
 ```
 
-Next Loop 1 run (or manual "Run now" in Claude Desktop's Scheduled panel) will:
-
-1. See your new target
-2. If its parent directory exists, sync on next CLAUDE.md change
-3. If the parent directory doesn't exist (product not installed), log as "skipped"
-
-## Disable a target temporarily
-
-Don't want a target to receive updates right now (but keep the entry for later)?
+### Disable / re-enable
 
 ```bash
 python3 -c "
 import json
 from pathlib import Path
-NAME = 'gemini-cli'   # <-- change me
+NAME, ENABLED = 'gemini-cli', False   # or True to re-enable
 s = json.load(open(Path.home() / '.claude/reorg-log/state.json'))
-s['targets'][NAME]['enabled'] = False
+s['targets'][NAME]['enabled'] = ENABLED
 json.dump(s, open(Path.home() / '.claude/reorg-log/state.json', 'w'), indent=2)
 "
 ```
 
-Re-enable: same snippet with `True`.
-
-## Remove a target permanently
+### Remove a target
 
 ```bash
 python3 -c "
@@ -78,9 +92,9 @@ json.dump(s, open(Path.home() / '.claude/reorg-log/state.json', 'w'), indent=2)
 "
 ```
 
-(Removing a built-in target like `codex` also works, but note: Loop 1's init block will re-add it on next run since it's a default. If you want to permanently exclude a built-in, use `enabled: false` instead.)
+> Note: removing a built-in like `codex` works, but Loop 1's init block will re-add it (as default) on next run. Use `enabled: false` instead to permanently exclude a built-in.
 
-## List current targets
+### List current targets
 
 ```bash
 python3 -c "
@@ -90,34 +104,26 @@ s = json.load(open(Path.home() / '.claude/reorg-log/state.json'))
 for name, t in s['targets'].items():
     en = '✓' if t.get('enabled', True) else '✗'
     synced = t.get('last_synced_at', '—') or '—'
-    print(f\"[{en}] {name:20s} {t['path']}  (synced: {synced})\")
+    print(f'[{en}] {name:20s} {t[\"path\"]}  (synced: {synced})')
 "
 ```
 
 ## Edge cases
 
-### The target file format isn't markdown
+### Non-markdown format
 
-For now, the loop writes CLAUDE.md content as-is with a comment header. If your tool expects JSON/YAML/other, **don't** add it as `raw-md` — you'll corrupt the file. Wait for Tier 2 support.
+Claude won't let you add a target as `raw-md` if it's actually JSON / YAML. If you bypass the interview and hand-add a non-markdown target as `raw-md`, you'll corrupt your config on first sync. Tier 2 support is planned for v1.4+.
 
-Workaround: if the target accepts a "point at a file" config (like Aider's `--read` or a `systemPromptFile` option), point it at `~/.claude/CLAUDE.md` directly. Then you don't need Loop 1 to write anywhere at all.
+**Workaround for now**: if your tool supports a "point at a file" config (Aider's `--read`, some tools' `systemPromptFile` option), point it at `~/.claude/CLAUDE.md` directly. No Loop 1 writing needed.
 
-### Your tool's memory directory doesn't exist until first use
+### Target's directory doesn't exist yet
 
-No problem — the loop checks `dirname(path)` before writing. If the dir doesn't exist, the target is skipped with "not installed". Once the tool is used and creates its config dir, the next Loop 1 run will start syncing automatically.
+That's fine. Loop 1 checks parent-dir existence per target and silently skips missing ones. When you install the tool later and its directory appears, next Loop 1 run picks it up.
 
-### Two Claude machines, different custom target sets
+### Two machines, different target sets
 
-state.json is per-machine (at `~/.claude/reorg-log/state.json`). If you want the same custom targets on both machines, run the add snippet on each.
+`state.json` is per-machine. To keep machines in sync, add the same targets via Claude on each machine (or copy `state.json` — but remember, per-target hashes will force one extra "first sync" on the second machine).
 
 ### Security
 
-`state.json` is a plain-text config you own. Loop 1 only reads the paths and writes CLAUDE.md content there. If you put a sensitive path in as a target, CLAUDE.md content will land there. Treat CLAUDE.md as non-secret (anyway, it's loaded into every AI session).
-
-## Tell the skill about your target once, from Phase 6
-
-If you're running the setup skill (`ai-memory-unifier`) and hit Phase 6, just say:
-
-> Also add `<product name>` at `~/.my-path/INSTRUCTIONS.md` as a sync target.
-
-Claude will run the add snippet for you and include it in the initial state.json. Same effect as running the bash manually.
+`state.json` is a plain-text config you own; Loop 1 only writes CLAUDE.md content (with a header comment) to target paths. Treat CLAUDE.md as non-secret — it's loaded into every AI session anyway. Don't put anything in CLAUDE.md you wouldn't want spread to every AI tool.

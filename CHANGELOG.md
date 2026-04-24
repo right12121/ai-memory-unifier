@@ -6,6 +6,31 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-04-24
+
+### Changed — UX: Claude does the config, not the user
+
+The "custom sync targets" feature added in v1.2 required users to run Python snippets to add their own products. That was wrong for the audience — people installing this skill specifically because they don't want to hand-edit config files.
+
+- **Phase 0 now starts with a kickoff interview** (before any scanning):
+  - Claude lists auto-detected products
+  - Asks: "any products I didn't detect?" — user answers in natural language with name + path
+  - Asks: "any server-side products (Cowork, ChatGPT, etc.) you want me to note for manual handling?"
+  - Confirms which detected products should be **auto-synced** going forward
+  - Builds `scan_sources`, `sync_target_list`, `note_only` lists
+- Phase 6 writes `state.json` from `sync_target_list` directly — no re-asking, no user Python
+- Post-setup tweaks ("add X", "disable Y", "remove Z") are done by talking to Claude; Claude edits state.json itself
+- `references/custom-sync-targets.md` repositioned as **post-setup reference** for rare manual edits (debugging, offline, scripting)
+
+### Rationale
+
+v1.2 was a correct feature (data-driven sync) but wrong interaction mode (user writes JSON). v1.3 keeps the feature and shifts the interaction mode to pure conversation.
+
+### Compatibility
+
+- Fully backward-compatible. `state.json` schema unchanged from v1.2.
+- Existing users who added targets via v1.2 Python snippets: entries remain intact; Claude can now manage them conversationally.
+
 ## [1.2.0] — 2026-04-24
 
 ### Added
