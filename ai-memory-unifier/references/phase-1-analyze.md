@@ -1,11 +1,12 @@
 # Phase 1 — Analyze & propose
 
-Still read-only. Read every candidate file, classify each, and propose a complete target architecture.
+Still read-only. Read every candidate file (across all detected AI products), classify each, and propose a complete target architecture rooted in Claude Code.
 
 ## Input
 
-- Diagnostic report from Phase 0
+- Diagnostic report from Phase 0 (covers Claude Code + Codex + Cursor + Aider + any other detected products + user-mentioned products)
 - Access to every file listed in that report
+- For server-side products (Cowork, ChatGPT, etc.): any content the user manually pasted in chat during Phase 0
 
 ## Classification taxonomy
 
