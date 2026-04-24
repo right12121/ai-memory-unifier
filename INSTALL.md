@@ -87,24 +87,32 @@ export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 # { "autoMemoryEnabled": false }
 ```
 
-### "Loop 1 keeps saying 'conflict — Codex AGENTS.md modified externally'"
+### "Loop 1 keeps saying 'conflicts=[codex]' (or gemini-cli / windsurf)"
 
-Something else (or you, manually) wrote to `~/.codex/AGENTS.md` between Loop 1 runs. Fix:
+Some other tool (or you, manually) wrote to the target's memory file between Loop 1 runs, so the per-target hash no longer matches what Loop 1 recorded. The loop fail-closes to avoid overwriting your edit.
+
+Fix by resetting just that target's state to its current on-disk hash (we trust the external edit):
 
 ```bash
-# Reconcile: treat current CLAUDE.md as truth, reset state to current Codex hash
+# Reconcile one target. Replace TARGET_NAME with codex / gemini-cli / windsurf
 python3 -c "
 import json, hashlib
 from pathlib import Path
-state = json.load(open(Path.home() / '.claude/reorg-log/state.json'))
-state['last_codex_hash'] = hashlib.sha256(
-    (Path.home() / '.codex/AGENTS.md').read_bytes()
-).hexdigest()
-json.dump(state, open(Path.home() / '.claude/reorg-log/state.json', 'w'), indent=2)
+
+TARGET_NAME = 'codex'   # <-- change me
+
+state_path = Path.home() / '.claude/reorg-log/state.json'
+s = json.load(open(state_path))
+target_path = Path(s['targets'][TARGET_NAME]['path']).expanduser()
+s['targets'][TARGET_NAME]['last_target_hash'] = hashlib.sha256(target_path.read_bytes()).hexdigest()
+json.dump(s, open(state_path, 'w'), indent=2)
+print(f'Reset {TARGET_NAME} last_target_hash to current on-disk value.')
 "
 ```
 
-Next Loop 1 run will detect CLAUDE.md changed and sync cleanly.
+Next Loop 1 run will see the reset state and sync cleanly from CLAUDE.md on top of the current target.
+
+**Alternative**: if you'd rather pull the external edit *back* into `~/.claude/CLAUDE.md` (so every downstream target inherits it), copy the content manually to CLAUDE.md first, then just wait — the next Loop 1 run notices CLAUDE.md changed and re-syncs everything.
 
 ### "Did anything actually change? My Claude still behaves the same"
 

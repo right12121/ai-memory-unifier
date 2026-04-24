@@ -1,167 +1,106 @@
 # Phase 6 — Register automated Loops
 
-Two scheduled tasks keep the consolidated memory system healthy without daily user involvement.
+Two scheduled tasks keep the consolidated memory system healthy without daily user involvement:
+
+1. **Loop 1 — Memory Sync**: propagates `~/.claude/CLAUDE.md` to every detected Tier-1 downstream agent (Codex, Gemini CLI, Windsurf)
+2. **Loop 2 — Reorg Scan**: nightly scan across CLAUDE.md, skills, AutoMemory; auto-maintains symlinks; suggests migrations
 
 ## Tooling
 
 Use `mcp__scheduled-tasks__create_scheduled_task` (Claude Desktop's durable scheduled task API). Tasks persist across Claude Desktop restarts; state kept in `~/.claude/scheduled-tasks/<taskId>/`.
 
-Set `notifyOnCompletion: true` so the user sees output in Desktop's notification panel.
+---
 
-## Loop 1 — CLAUDE.md → Codex AGENTS.md sync
+## Loop 1 — Memory Sync (multi-target)
 
-**When**: only if `~/.codex/` exists on the user's machine.
+**Task ID**: `memory-sync-agents`
+**Cron**: `17 9 * * *` (daily at ~09:17; Claude Desktop adds jitter)
+**Template**: `templates/scheduled-task-sync.template.md`
+**`notifyOnCompletion`**: `false` (runs quietly; log is the audit trail)
 
-**Cron**: `17 9 * * *` (daily at ~09:17; Claude Desktop adds a small jitter).
+**Targets** (Tier 1 — raw markdown global files). Each is enabled only if detected on the user's machine:
 
-**Task ID**: `memory-sync-codex-agents`
+| Target | Path | Detection signal |
+|--------|------|------------------|
+| `codex` | `~/.codex/AGENTS.md` | `~/.codex/` dir exists |
+| `gemini-cli` | `~/.gemini/GEMINI.md` | `~/.gemini/` dir exists |
+| `windsurf` | `~/.codeium/windsurf/memories/global_rules.md` | `~/.codeium/windsurf/` dir exists |
 
-**Full prompt** (load from `templates/scheduled-task-sync-codex.template.md` — here's the gist):
+**Per-target state** in `~/.claude/reorg-log/state.json` (schema v2):
 
-```
-You are Claude Code's "Memory Sync Loop 1". Run once per day, syncing
-~/.claude/CLAUDE.md → ~/.codex/AGENTS.md. Hash-idempotent, fail-closed.
-
-Logic (bash):
-
-STATE=~/.claude/reorg-log/state.json
-LOCK=~/.claude/reorg-log/.loop1.lock
-TODAY=$(date +%Y-%m-%d)
-LOG=~/.claude/reorg-log/$TODAY.md
-
-exec 9> "$LOCK"
-if ! flock -n 9; then echo "Loop 1 already running, exit"; exit 0; fi
-
-[ -f "$STATE" ] || echo '{"last_claude_hash":"","last_codex_hash":""}' > "$STATE"
-
-CLAUDE_HASH=$(shasum -a 256 ~/.claude/CLAUDE.md | awk '{print $1}')
-LAST_CLAUDE=$(python3 -c "import json;print(json.load(open('$STATE')).get('last_claude_hash',''))")
-
-if [ "$CLAUDE_HASH" = "$LAST_CLAUDE" ]; then
-  echo "## Loop 1 @ $(date '+%H:%M:%S')" >> "$LOG"
-  echo "- ⏭️  CLAUDE.md unchanged (hash=${CLAUDE_HASH:0:12}), skipping sync" >> "$LOG"
-  echo "" >> "$LOG"
-  exit 0
-fi
-
-# Conflict detection: if Codex AGENTS.md changed externally, bail
-CODEX_HASH=""
-[ -f ~/.codex/AGENTS.md ] && CODEX_HASH=$(shasum -a 256 ~/.codex/AGENTS.md | awk '{print $1}')
-LAST_CODEX=$(python3 -c "import json;print(json.load(open('$STATE')).get('last_codex_hash',''))")
-
-if [ -n "$CODEX_HASH" ] && [ "$CODEX_HASH" != "$LAST_CODEX" ] && [ -n "$LAST_CODEX" ]; then
-  echo "## Loop 1 @ $(date '+%H:%M:%S') ⚠️ conflict" >> "$LOG"
-  echo "- ❌ Codex AGENTS.md was modified outside this loop (hash=${CODEX_HASH:0:12}, expected=${LAST_CODEX:0:12})" >> "$LOG"
-  echo "- fail-closed — waiting for human review" >> "$LOG"
-  exit 1
-fi
-
-# Atomic write: tmp + rename
-TMP=$(mktemp)
-{ printf '<!-- synced from ~/.claude/CLAUDE.md at %s -->\n\n' "$(date -Iseconds)"; cat ~/.claude/CLAUDE.md; } > "$TMP"
-mv "$TMP" ~/.codex/AGENTS.md
-
-NEW_CODEX_HASH=$(shasum -a 256 ~/.codex/AGENTS.md | awk '{print $1}')
-python3 -c "
-import json
-s = json.load(open('$STATE'))
-s['last_claude_hash'] = '$CLAUDE_HASH'
-s['last_codex_hash'] = '$NEW_CODEX_HASH'
-json.dump(s, open('$STATE','w'), indent=2)
-"
-
-echo "## Loop 1 @ $(date '+%H:%M:%S') ✅ synced" >> "$LOG"
-echo "- CLAUDE.md hash: ${CLAUDE_HASH:0:12}" >> "$LOG"
-echo "- Codex AGENTS.md hash: ${NEW_CODEX_HASH:0:12}" >> "$LOG"
-echo "" >> "$LOG"
+```json
+{
+  "version": 2,
+  "last_claude_hash": "<SHA256 of CLAUDE.md at last sync>",
+  "targets": {
+    "codex":      { "path": "...", "last_target_hash": "...", "last_synced_at": "..." },
+    "gemini-cli": { ... },
+    "windsurf":   { ... }
+  },
+  "initialized_at": "..."
+}
 ```
 
-**After running**: report `Loop 1 @ <time> — <status>` where status is ✅ synced / ⏭️ skipped / ⚠️ conflict.
+**Logic** (summary; full prompt in `templates/scheduled-task-sync.template.md`):
 
-**Never modify** CLAUDE.md or AGENTS.md content (beyond the sync header). This is a raw copy, not a rewrite.
+1. Acquire `flock` on `~/.claude/reorg-log/.loop1.lock`
+2. Initialize or migrate `state.json` (v1 → v2 on first v1.1 run; preserves old `last_codex_hash`)
+3. Hash `~/.claude/CLAUDE.md`. If same as `state.last_claude_hash` → skip all targets
+4. For each target:
+   - Skip if target's parent dir doesn't exist (product not installed)
+   - Check current target hash; if it differs from `state.targets[<n>].last_target_hash` AND state has a recorded hash → **conflict**, skip this target (per-target fail-closed)
+   - Otherwise atomic write: tmp file → `mv` into target path (with header comment)
+   - Update `state.targets[<n>].last_target_hash` + `last_synced_at`
+5. If at least one target synced, update `state.last_claude_hash`
+6. Log summary to `~/.claude/reorg-log/<today>.md`
 
-## Loop 2 — Daily reorg scan + maintenance
+**Key property**: each target is independent. A conflict on Windsurf doesn't block Codex from syncing.
 
-**Cron**: `23 21 * * *` (daily at ~21:23; one side-ish from Loop 1)
+### Tier 2 / Tier 3 targets
+
+Not handled by this loop in v1.1. See `references/product-registry.md` for the tier classification and planned timeline (v1.2, v1.3).
+
+---
+
+## Loop 2 — Daily reorg scan
 
 **Task ID**: `memory-reorg-scan`
+**Cron**: `23 21 * * *` (daily at ~21:23)
+**Template**: `templates/scheduled-task-reorg-scan.template.md`
+**`notifyOnCompletion`**: `true` (the user sees the nightly report)
 
 **Intent**: one nightly sanity pass. Detects drift, maintains symlinks, reminds the user to migrate new AutoMemory items.
 
-**Full prompt** (load from `templates/scheduled-task-reorg-scan.template.md`). Highlights:
+### Scan areas
 
-### Section 1: CLAUDE.md health
-Line count thresholds (same as Phase 3's budget):
-- ≤ 100: ✅ lean
-- 101-150: ✅ healthy
-- 151-200: ⚠️ consider splitting
-- \> 200: 🔴 strongly recommend splitting
+**1. CLAUDE.md health** (line-count thresholds, community-tested):
 
-If > 200, suggest 2-3 candidate sections to move to skills.
+- `≤ 100`: ✅ lean (ideal)
+- `101 – 150`: ✅ healthy
+- `151 – 200`: ⚠️ consider splitting
+- `> 200`: 🔴 strongly recommend splitting
 
-### Section 2: Skill changes + symlink maintenance (auto-execute)
+**2. Skill changes + symlink maintenance (auto-execute)**:
 
 Source of truth: `~/.claude/skills/<name>/` (real dirs)
-Mirrors: `~/.codex/skills/<name>` (symlinks)
+Mirror: `~/.codex/skills/<name>` (symlinks, if Codex installed)
 
-Sweep:
+The loop ensures:
+- Every real skill source in `~/.claude/skills/` has a corresponding symlink in `~/.codex/skills/`
+- Orphan symlinks (pointing at removed skills) are cleaned up
+- Codex-shipped system skills (`.system`, `find-skills`, `playwright`) are left alone
 
-```bash
-SOURCE_DIR=~/.claude/skills
-MIRRORS=(~/.codex/skills)  # CoWork removed since it doesn't read here
+**3. AutoMemory scan** (`find ~/.claude/projects/*/memory -newermt "24 hours ago"`):
 
-for mirror in "${MIRRORS[@]}"; do
-  [ -d "$mirror" ] || continue
-  # Ensure every real skill source has a symlink in the mirror
-  for src in "$SOURCE_DIR"/*/; do
-    name=$(basename "$src")
-    [ -L "$SOURCE_DIR/$name" ] && continue  # skip symlinks (like find-skills)
-    target="$mirror/$name"
-    if [ ! -L "$target" ] || [ "$(readlink "$target")" != "$SOURCE_DIR/$name" ]; then
-      ln -sfn "$SOURCE_DIR/$name" "$target"
-      # log "added $target"
-    fi
-  done
-  # Clean orphan symlinks (target gone)
-  for link in "$mirror"/*; do
-    [ -L "$link" ] || continue
-    name=$(basename "$link")
-    case "$name" in .system|find-skills|playwright) continue ;; esac
-    if [ ! -d "$SOURCE_DIR/$name" ] || [ -L "$SOURCE_DIR/$name" ]; then
-      rm "$link"
-      # log "removed orphan $link"
-    fi
-  done
-done
-```
+For each new or modified memory file, suggest classification (🔵 CLAUDE.md / 🟢 existing skill / 🟡 new skill / ⚪ keep / 🔴 archive). Suggestions only — no auto-execute.
 
-### Section 3: AutoMemory scan
+**4. AutoMemory volume**:
 
-```bash
-find ~/.claude/projects/*/memory -maxdepth 2 -name '*.md' -newermt "24 hours ago" 2>/dev/null
-```
-
-For each file created in last 24h, give a classification suggestion:
-- 🔵 move to CLAUDE.md
-- 🟢 merge into existing skill `<name>`
-- 🟡 worth a new skill
-- ⚪ keep in place
-- 🔴 archive
-
-Suggestions only — don't auto-execute.
-
-### Section 4: AutoMemory volume
-
-```bash
-COUNT=$(find ~/.claude/projects/*/memory -name '*.md' 2>/dev/null | wc -l)
-SIZE=$(du -sh ~/.claude/projects 2>/dev/null | awk '{print $1}')
-```
-
-If file count > 50 or size > 500 KB, alert.
+- `count > 50 OR size > 500 KiB` → ⚠️ alert recommending a migration pass
 
 ### Output format
 
-Append to `~/.claude/reorg-log/<today>.md`:
+Append to `~/.claude/reorg-log/<today>.md` (and post to chat if `notifyOnCompletion=true`):
 
 ```markdown
 ## Loop 2 @ <HH:MM:SS>
@@ -173,69 +112,60 @@ Append to `~/.claude/reorg-log/<today>.md`:
 ### 2. Skill changes + symlink maintenance
 - Added: <list>
 - Removed orphans: <list>
-- (no changes if empty)
 
 ### 3. AutoMemory new files (past 24h)
 <list with classification suggestions>
 
 ### 4. AutoMemory volume
-- Files: N
-- Size: X KB
-- Status: ✅/⚠️
+- Files: N / Size: X KiB / Status: ✅/⚠️
 
 ### 📋 Suggested actions (pending your confirmation)
-- [ ] <action 1>
-- [ ] <action 2>
+- [ ] ...
 ```
+
+---
 
 ## Registration API
 
 ```
+# Loop 1
 mcp__scheduled-tasks__create_scheduled_task(
-  taskId="memory-sync-codex-agents",
+  taskId="memory-sync-agents",
   cronExpression="17 9 * * *",
-  description="Daily 9:17 — sync CLAUDE.md to Codex AGENTS.md (hash-idempotent, fail-closed on conflict)",
-  notifyOnCompletion=false,       # runs quietly
-  prompt=<loop-1-prompt-above>
+  description="Daily 9:17 — sync CLAUDE.md to detected Tier-1 AI agents (Codex, Gemini, Windsurf); hash-idempotent per target, fail-closed on conflict",
+  notifyOnCompletion=false,
+  prompt=<from templates/scheduled-task-sync.template.md>
 )
 
+# Loop 2
 mcp__scheduled-tasks__create_scheduled_task(
   taskId="memory-reorg-scan",
   cronExpression="23 21 * * *",
   description="Daily 21:23 — scan CLAUDE.md / skills / AutoMemory, maintain symlinks, suggest migrations",
-  notifyOnCompletion=true,        # user sees the nightly report
-  prompt=<loop-2-prompt-above>
+  notifyOnCompletion=true,
+  prompt=<from templates/scheduled-task-reorg-scan.template.md>
 )
 ```
 
-## State file
+### If only Claude Code (no Tier-1 targets)
 
-Canonical format in `templates/state.json.template`:
+Register Loop 1 anyway. It will find zero detected targets and silently log `skipped=[...]` each day. Cheap to run; no harm. When the user later installs Codex / Gemini CLI / Windsurf, the loop picks up automatically on next run (no re-registration needed).
 
-```json
-{
-  "last_claude_hash": "<SHA256 of CLAUDE.md>",
-  "last_codex_hash": "<SHA256 of Codex AGENTS.md>",
-  "initialized_at": "<ISO datetime>"
-}
-```
+### State file
 
-Path: `~/.claude/reorg-log/state.json`. Initialize once at the end of Phase 6 using the template (substitute `__ISO_DATETIME__`), or let Loop 1 bootstrap it on first run.
+Canonical format in `templates/state.json.template`. Initialize once at end of Phase 6 (or let Loop 1 bootstrap it on first run — the template's bash includes init + v1→v2 migration).
 
 ## Test immediately
 
-After registering, execute each loop once manually (from Claude Desktop's Scheduled panel → "Run now") so the user sees:
-- permission prompts get approved upfront (so nightly runs don't pause)
-- output is sane
-- state.json gets initialized
+After registering, execute each loop once manually (from Claude Desktop's Scheduled panel → "Run now"):
 
-## Skip Loop 1 entirely if no Codex
-
-If `~/.codex/` doesn't exist, create only Loop 2. In chat, note:
-> Codex not detected — skipping Loop 1. If you install Codex later, re-run this skill and it will register Loop 1 for you.
+- Permission prompts get approved upfront (nightly runs won't pause)
+- Output is sane (state.json initialized correctly, first sync produces valid downstream files)
+- Sync targets all write cleanly
 
 ## Edge cases
 
-- **User has multiple Claude Desktop installations**: scheduled tasks are per-install. Nothing to do here.
-- **CLAUDE.md modified in flight during Loop 1 run**: atomic rename protects the reader; worst case a Loop 1 run misses this edit, next run catches it.
-- **state.json corrupted**: loop logs the error and exits non-zero. User rebuilds state.json from current hashes manually.
+- **User has multiple Claude Desktop installations**: scheduled tasks are per-install. Nothing special needed.
+- **CLAUDE.md modified during Loop 1 run**: atomic rename + flock protects readers; worst case the current run syncs the stale version, next run catches the new version.
+- **state.json corrupted**: Loop 1 init block rewrites a clean state on failure (but losing target-hash history means a one-time false conflict on any manually-edited targets; unlikely but document).
+- **User installs a new Tier-1 product later**: Loop 1's init block auto-adds the target on next run via the `default_targets` merge logic. No user action needed.

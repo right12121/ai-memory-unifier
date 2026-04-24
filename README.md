@@ -11,7 +11,7 @@
 - **Phase 0 — Diagnose**: scans a registry of common AI products (Claude Code, Codex, Cursor, Aider, Continue, Cline, Windsurf, Zed, Gemini CLI, Amp, Qclaw/OpenClaw, …) for their memory files. Asks you about products not in the registry (Hermes, KimiClaw, internal tools). Produces a unified diagnostic report.
 - **Phase 1 — Analyze**: classifies every source file into 5 targets (🔵 CLAUDE.md / 🟢 existing skill / 🟡 new skill / ⚪ keep / 🔴 archive). Flags conflicts across products (e.g., Cursor rules say Python 3.12, Claude thinks 3.11).
 - **Phase 2–5 — Archive + Build + Migrate**: dated archive with SHA256 manifest + auto-generated rollback script. Synthesizes a clean CLAUDE.md. Creates topic skills. Moves Claude Code's own scattered files into archive (other products' original files are **left intact** so those tools keep working).
-- **Phase 6 — Loops**: registers two daily scheduled tasks — (a) sync CLAUDE.md → Codex AGENTS.md, (b) nightly reorg scan + symlink maintenance + AutoMemory triage.
+- **Phase 6 — Loops**: registers two daily scheduled tasks — (a) **multi-target sync**: CLAUDE.md → Codex AGENTS.md, Gemini CLI GEMINI.md, Windsurf global_rules.md (every detected downstream agent, hash-idempotent per target), (b) nightly reorg scan + symlink maintenance + AutoMemory triage.
 
 Every phase asks for your approval before executing. You can skip phases, adjust classifications, or abort any time.
 
@@ -32,9 +32,10 @@ If you only use one tool and it's well-organized, this is overkill.
 ### In scope (we can read + migrate)
 
 - **Claude Code** — primary target; we write the new global CLAUDE.md + skills here
-- **Codex CLI** — sync target; CLAUDE.md → `~/.codex/AGENTS.md` daily via Loop 1
-- **Readable sources**: Cursor, Aider, Continue, Cline, Windsurf, Zed, Gemini CLI, Amp, Qclaw/OpenClaw, and more (see [product-registry.md](./ai-memory-unifier/references/product-registry.md))
+- **Tier 1 sync targets** (Loop 1 writes daily, auto-detected): Codex CLI `~/.codex/AGENTS.md`, Gemini CLI `~/.gemini/GEMINI.md`, Windsurf `~/.codeium/windsurf/memories/global_rules.md`
+- **Readable sources** (scanned in Phase 0; migrated content copied into CLAUDE.md/skills but original files left intact): Cursor, Aider, Continue, Cline, Zed, Amp, Qclaw/OpenClaw, and more (see [product-registry.md](./ai-memory-unifier/references/product-registry.md))
 - **User-mentioned products**: tell Phase 0 where they live and we scan them too
+- **Tier 2/3 sync targets** (Continue, Zed, Aider, Cline, Cursor): structured-config / project-local writes planned for v1.2+
 
 ### Out of scope (server-side, no reliable local API)
 
@@ -94,7 +95,7 @@ MIT — see [LICENSE](./LICENSE).
 - **Phase 0 — 诊断**：扫描一份内置的产品 registry（Claude Code、Codex、Cursor、Aider、Continue、Cline、Windsurf、Zed、Gemini CLI、Amp、Qclaw/OpenClaw……）找它们各自的记忆文件。还会问你有没有别的（Hermes、KimiClaw、内部工具），然后一起扫。给出一份统一的状态报告。
 - **Phase 1 — 分析**：把每个源文件分到 5 个目标之一（🔵 进 CLAUDE.md / 🟢 并入现有 skill / 🟡 独立成新 skill / ⚪ 原地保留 / 🔴 归档）。自动标记跨产品冲突（比如 Cursor rules 说 Python 3.12，Claude 觉得 3.11）。
 - **Phase 2–5 — 归档 + 构建 + 迁移**：带 SHA256 manifest 和自动生成回滚脚本的日期归档目录。合成干净的 CLAUDE.md。创建主题 skill。把 Claude Code 自己的零散文件 `mv` 进归档；**其他产品的原始文件保留不动**，让那些工具继续工作。
-- **Phase 6 — 自动 Loop**：注册两个每日计划任务 —— (a) 同步 CLAUDE.md → Codex AGENTS.md；(b) 夜间扫描 + symlink 维护 + AutoMemory 归类建议。
+- **Phase 6 — 自动 Loop**：注册两个每日计划任务 —— (a) **多目标同步**：CLAUDE.md → Codex AGENTS.md、Gemini CLI GEMINI.md、Windsurf global_rules.md（检测到哪个产品就同步哪个，每个目标独立 hash 幂等）；(b) 夜间扫描 + symlink 维护 + AutoMemory 归类建议。
 
 每个 Phase 执行前都等你确认。随时跳过、调整、中止。
 
@@ -115,9 +116,10 @@ MIT — see [LICENSE](./LICENSE).
 ### 在范围内（能读 + 能迁移）
 
 - **Claude Code** — 主要目标，新的全局 CLAUDE.md + skill 都在这
-- **Codex CLI** — 同步目标，CLAUDE.md → `~/.codex/AGENTS.md`，每天 Loop 1 自动同步
-- **可读源**：Cursor、Aider、Continue、Cline、Windsurf、Zed、Gemini CLI、Amp、Qclaw/OpenClaw 等（完整列表见 [product-registry.md](./ai-memory-unifier/references/product-registry.md)）
+- **Tier 1 同步目标**（Loop 1 每天自动写入，自动检测）：Codex CLI `~/.codex/AGENTS.md`、Gemini CLI `~/.gemini/GEMINI.md`、Windsurf `~/.codeium/windsurf/memories/global_rules.md`
+- **可读源**（Phase 0 扫描；内容复制进 CLAUDE.md / skill，原文件保留不动）：Cursor、Aider、Continue、Cline、Zed、Amp、Qclaw/OpenClaw 等（完整列表见 [product-registry.md](./ai-memory-unifier/references/product-registry.md)）
 - **用户补充的产品**：告诉 Phase 0 文件在哪，它就会扫
+- **Tier 2/3 同步目标**（Continue / Zed / Aider / Cline / Cursor）：结构化配置/项目级回写，计划在 v1.2+ 支持
 
 ### 不在范围内（服务端存储，没有可靠的本地接口）
 

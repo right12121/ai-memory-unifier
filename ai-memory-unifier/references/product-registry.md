@@ -2,12 +2,29 @@
 
 A living list of AI coding agents, CLIs, and assistants that maintain local memory / instructions, with detection methods.
 
-Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
+Used by:
+- **Phase 0 (diagnose)** — iterate this list to find what the user has; ask user about products not in the list
+- **Loop 1 (sync)** — for each "Tier 1" target below, downstream-sync `~/.claude/CLAUDE.md` content on any change
+
+Phase 0 should:
 1. Check each product in this registry
 2. Ask the user: "Any other AI products you use regularly? Some agents I don't know about?"
 3. For each detected or user-mentioned product, attempt to read its memory files
 
-> **Contributing**: if you know a product not listed here, PR it to `references/product-registry.md` in this repo. Include name, detection path(s), memory file path(s), and 1-line notes.
+> **Contributing**: if you know a product not listed here, PR it to `references/product-registry.md` in this repo. Include name, detection path(s), memory file path(s), writability (see sync tiers below), and 1-line notes.
+
+## Sync tiers
+
+**Tier 1 — raw markdown global** (auto-synced by Loop 1 v1.1):
+A single markdown file at a known global path. Write is a raw copy with header comment. Safest; what we do today for Codex, Gemini CLI, Windsurf.
+
+**Tier 2 — structured config** (planned v1.2):
+Requires writing a specific field in a JSON / YAML file (Continue's `systemMessage`, Zed's `assistant.default_model_prompt`, etc.). Carries slight risk of corrupting the user's other config. Requires opt-in.
+
+**Tier 3 — project-local** (planned v1.3):
+Per-project files like Cursor's `.cursorrules` or Amp's `AGENT.md`. User needs to maintain a list of which projects to sync to. More UX overhead.
+
+**Tier X — out of scope**: server-side (Cowork, ChatGPT web, Claude.ai web, Gemini web, Copilot).
 
 ---
 
@@ -33,7 +50,7 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
   - `~/.codex/skills/*/SKILL.md` — Codex skills (some ship with the CLI: `.system`, `find-skills`, `playwright`; treat those as system, don't migrate)
   - `~/.codex/instructions.md`, `~/.codex/prompt.md` — older or fallback names; check if present
   - `~/.codex/config.toml` — references `project_doc_fallback_filenames` that may point elsewhere
-- **Writable**: yes (we write AGENTS.md from CLAUDE.md via Loop 1)
+- **Writable**: **Tier 1 (raw-md)** → Loop 1 writes `~/.codex/AGENTS.md`
 
 ### Cursor
 
@@ -41,7 +58,7 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
 - **Memory sources**:
   - Project-level: `.cursorrules` (legacy), `.cursor/rules/*.mdc` (new)
   - Global user prompts: `~/Library/Application Support/Cursor/User/globalStorage/cursor.cursor/` (less standardized)
-- **Writable**: yes, but Cursor reads `.cursorrules` per-project — global consolidation has limits
+- **Writable**: **Tier 3 (project-local)** — Cursor reads `.cursorrules` per-project. v1.1 does not auto-write; planned v1.3 may let user list projects to sync.
 - **Notes**: Cursor's memory is **project-local by design**. Consider extracting only generic (non-project-specific) rules and offer to mirror them to CLAUDE.md.
 
 ### Aider
@@ -51,7 +68,7 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
   - `~/.aider.conf.yml` — global config including system prompt prefix
   - Project `.aider.conf.yml` — per-repo override
   - `.aider.chat.history.md` (chat log, not really memory)
-- **Writable**: yes (yaml config)
+- **Writable**: **Tier 2 (yaml-field / --read pointer)** — cleanest is to `--read ~/.claude/CLAUDE.md` via yaml config; planned v1.2.
 
 ### Continue (VS Code / JetBrains extension)
 
@@ -59,14 +76,14 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
 - **Memory sources**:
   - `~/.continue/config.json` — system message, custom prompts, rules
   - `~/.continue/rules/*.md` (if using rules feature)
-- **Writable**: yes
+- **Writable**: **Tier 2 (json-field)** — edit `systemMessage` inside config.json; planned v1.2.
 
 ### Cline (VS Code extension, formerly Claude Dev)
 
 - **Detection**: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/`
 - **Memory sources**:
   - `settings.json` inside that storage directory — custom instructions live here
-- **Writable**: yes, but VS Code must be closed to avoid conflicts
+- **Writable**: **Tier 2 (json-field)** with caveat — VS Code must be closed to avoid conflicts. Deferred to v1.2+.
 
 ### Windsurf / Codeium
 
@@ -74,14 +91,14 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
 - **Memory sources**:
   - `memories/global_rules.md` — Cascade's global memory file
   - Project `.windsurfrules`
-- **Writable**: yes
+- **Writable**: **Tier 1 (raw-md)** → Loop 1 writes `~/.codeium/windsurf/memories/global_rules.md`
 
 ### Zed
 
 - **Detection**: `~/.config/zed/` or `~/Library/Application Support/Zed/`
 - **Memory sources**:
   - `~/.config/zed/settings.json` → `assistant.default_model_prompt` etc.
-- **Writable**: yes (JSON edit)
+- **Writable**: **Tier 2 (json-field)** — edit `assistant.default_model_prompt`; planned v1.2.
 
 ### Gemini CLI / Gemini Code Assist
 
@@ -89,7 +106,7 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
 - **Memory sources**:
   - `~/.gemini/GEMINI.md` — Gemini CLI's version of CLAUDE.md
   - `~/.gemini/settings.json`
-- **Writable**: yes
+- **Writable**: **Tier 1 (raw-md)** → Loop 1 writes `~/.gemini/GEMINI.md`
 
 ### Amp (Sourcegraph)
 
@@ -97,7 +114,7 @@ Used by Phase 0 (diagnose) as the scanning baseline. Phase 0 should:
 - **Memory sources**:
   - `AGENT.md` (project-root standard Sourcegraph uses)
   - `~/.amp/` config
-- **Writable**: yes
+- **Writable**: **Tier 3 (project-local)** for `AGENT.md`. Global `~/.amp/AGENT.md` (if exists) could be Tier 1; add to sync targets in v1.2 once format confirmed.
 
 ### Warp (terminal with Agent Mode)
 

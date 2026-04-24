@@ -1,5 +1,22 @@
 {
+  "version": 2,
   "last_claude_hash": "",
-  "last_codex_hash": "",
+  "targets": {
+    "codex": {
+      "path": "__HOME__/.codex/AGENTS.md",
+      "last_target_hash": "",
+      "last_synced_at": null
+    },
+    "gemini-cli": {
+      "path": "__HOME__/.gemini/GEMINI.md",
+      "last_target_hash": "",
+      "last_synced_at": null
+    },
+    "windsurf": {
+      "path": "__HOME__/.codeium/windsurf/memories/global_rules.md",
+      "last_target_hash": "",
+      "last_synced_at": null
+    }
+  },
   "initialized_at": "__ISO_DATETIME__"
 }

@@ -222,18 +222,24 @@ Exception: if the user explicitly asks "strip Cursor rules I've migrated to CLAU
 
 **Load**: `references/phase-6-loops.md` + `templates/scheduled-task-*.template.md`
 
-**Loop 1 — Codex sync** (only if `~/.codex/` exists):
+**Loop 1 — Memory Sync** (multi-target downstream):
 - Cron: `17 9 * * *` (daily ~09:17)
-- Reads `~/.claude/CLAUDE.md`, checks SHA256 vs state; if changed, writes to `~/.codex/AGENTS.md` with header comment
-- Fail-closed: refuses to overwrite if Codex AGENTS.md was manually edited outside this loop
+- Reads `~/.claude/CLAUDE.md`; on change, writes to every detected Tier-1 target with header comment:
+  - `~/.codex/AGENTS.md` (Codex CLI)
+  - `~/.gemini/GEMINI.md` (Gemini CLI)
+  - `~/.codeium/windsurf/memories/global_rules.md` (Windsurf)
+- Per-target hash state; per-target fail-closed on external edit
+- Runs silently (no user notification)
+- Tier 2 / 3 targets planned for future versions
 
 **Loop 2 — Daily reorg scan**:
 - Cron: `23 21 * * *` (daily ~21:23)
 - Scans: CLAUDE.md health (line-count thresholds), skill changes, AutoMemory new files, symlink consistency
 - Appends a daily report to `~/.claude/reorg-log/<date>.md`
 - Suggests migrations but never executes without user confirmation
+- Runs with `notifyOnCompletion: true` so user sees the nightly report
 
-**Register using** `mcp__scheduled-tasks__create_scheduled_task` with `notifyOnCompletion: true` so the user sees results in Claude Desktop's notification panel.
+**Register using** `mcp__scheduled-tasks__create_scheduled_task`. Target IDs: `memory-sync-agents` and `memory-reorg-scan`.
 
 ---
 

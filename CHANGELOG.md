@@ -6,6 +6,35 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-04-24
+
+### Changed
+
+- **Loop 1 is now multi-target** (was Codex-only in v1.0). Auto-detects and syncs `~/.claude/CLAUDE.md` into:
+  - `~/.codex/AGENTS.md` (Codex CLI) — already in v1.0
+  - `~/.gemini/GEMINI.md` (Gemini CLI) — **new**
+  - `~/.codeium/windsurf/memories/global_rules.md` (Windsurf) — **new**
+- Per-target hash state + per-target fail-closed conflict detection. One target's drift does not block other targets from syncing.
+- Task ID renamed: `memory-sync-codex-agents` → `memory-sync-agents` (more general)
+- Template renamed: `scheduled-task-sync-codex.template.md` → `scheduled-task-sync.template.md`
+- `state.json` schema bumped to v2 (`targets` map). Loop 1 auto-migrates v1 state on first run (preserves old `last_codex_hash`).
+
+### Added
+
+- Sync tier classification in `references/product-registry.md`:
+  - **Tier 1**: raw-markdown global files (auto-sync by Loop 1 now)
+  - **Tier 2**: structured-config writes (Continue, Zed, Aider, Cline — planned v1.2)
+  - **Tier 3**: project-local writes (Cursor, Amp — planned v1.3)
+- Per-product writability annotation in registry
+
+### Migration notes (from v1.0)
+
+If you ran `ai-memory-unifier` at v1.0 and have a scheduled task called `memory-sync-codex-agents`:
+
+1. Your existing task keeps running with the old prompt — no action required
+2. To upgrade to multi-target: re-run the skill's Phase 6, or manually recreate the task with the new `memory-sync-agents` ID + template
+3. `state.json` is backward-compatible — Loop 1 auto-migrates v1 state schema to v2 on first run
+
 ## [1.0.0] — 2026-04-24
 
 Initial release under the name `ai-memory-unifier`.
