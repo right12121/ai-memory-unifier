@@ -6,6 +6,27 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versioning: [S
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-04-24
+
+### Added
+
+- **Custom sync targets**: users can add their own products to Loop 1's sync set by editing `~/.claude/reorg-log/state.json`. Loop 1 is now data-driven — it reads all entries from `state.json` → `targets`, no hardcoded list. Any raw-markdown global file the user points at gets auto-synced.
+- `references/custom-sync-targets.md` — documentation + copy-paste bash snippets for add / disable / remove / list custom targets
+- `enabled: bool` field per target — temporarily skip a target without removing it (preserves last-synced hash for later re-enable)
+- `format: "raw-md" | "..."` field per target — future tier formats (`json-field`, `yaml-field`, `project-md`) will dispatch here
+- Phase 6 now prompts the user: "any other product you want auto-synced? give me its file path" — added products land in state.json immediately
+
+### Changed
+
+- Sync loop template iterates `target_names` from state.json (previously hardcoded `for target_name in codex gemini-cli windsurf`). Built-ins remain as defaults populated on first run.
+- Loop 1 log output distinguishes `disabled` from `skipped` (disabled = `enabled: false` in state.json; skipped = product not installed or unsupported format)
+- State.json init block backfills `format` / `enabled` fields on pre-v1.2 state files without overwriting user customizations
+
+### Compatibility
+
+- v1.1 users: state.json auto-upgrades on first Loop 1 run; new fields are backfilled, existing hashes preserved
+- No task re-registration needed — same `memory-sync-agents` task ID
+
 ## [1.1.0] — 2026-04-24
 
 ### Changed

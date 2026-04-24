@@ -4,16 +4,22 @@
   "targets": {
     "codex": {
       "path": "__HOME__/.codex/AGENTS.md",
+      "format": "raw-md",
+      "enabled": true,
       "last_target_hash": "",
       "last_synced_at": null
     },
     "gemini-cli": {
       "path": "__HOME__/.gemini/GEMINI.md",
+      "format": "raw-md",
+      "enabled": true,
       "last_target_hash": "",
       "last_synced_at": null
     },
     "windsurf": {
       "path": "__HOME__/.codeium/windsurf/memories/global_rules.md",
+      "format": "raw-md",
+      "enabled": true,
       "last_target_hash": "",
       "last_synced_at": null
     }

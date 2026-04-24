@@ -7,17 +7,39 @@ You are the "Memory Sync Loop". Run once per day.
 
 Your job: **mechanically copy** `~/.claude/CLAUDE.md` into every detected downstream AI agent's global memory file (Tier 1 raw-markdown targets). Do not rewrite, summarize, or re-format content. The only added content is a single header comment on each target.
 
-## Sync targets (Tier 1 — raw markdown global files)
+## Sync targets
+
+**Targets are data-driven**: Loop 1 reads the full list from `~/.claude/reorg-log/state.json` → `targets` map. Users can add their own without touching this template.
+
+**Built-in Tier 1 targets** (auto-populated in state.json on first run):
 
 ```
-codex        →  ~/.codex/AGENTS.md
-gemini-cli   →  ~/.gemini/GEMINI.md
-windsurf     →  ~/.codeium/windsurf/memories/global_rules.md
+codex        →  ~/.codex/AGENTS.md                               (Codex CLI)
+gemini-cli   →  ~/.gemini/GEMINI.md                              (Gemini CLI)
+windsurf     →  ~/.codeium/windsurf/memories/global_rules.md     (Windsurf)
 ```
 
-Each target is enabled only if its parent directory exists (indicating the product is installed). Missing products are silently skipped.
+**User-added custom targets** (optional): any raw-markdown global file. Users edit `state.json` to add entries like:
 
-Tier 2 / Tier 3 targets (Continue, Zed, Aider, Cline, Cursor, Amp) are **not** handled by this loop in v1.1. Future version may add them.
+```json
+"my-internal-agent": {
+  "path": "~/.my-agent/INSTRUCTIONS.md",
+  "format": "raw-md",
+  "enabled": true,
+  "last_target_hash": "",
+  "last_synced_at": null
+}
+```
+
+See `references/custom-sync-targets.md` for how to add, disable, or remove custom targets.
+
+**Activation rules per target**:
+- `enabled: false` → skipped ("disabled")
+- `format` other than `raw-md` → skipped ("Tier 2+ not yet supported")
+- Parent directory doesn't exist → skipped ("not installed")
+- Otherwise → synced with header comment
+
+Tier 2 (structured-config) and Tier 3 (project-local) writes are planned for future versions; for now `format: raw-md` is the only handled format.
 
 ## Execution
 
@@ -46,10 +68,13 @@ home = str(Path.home())
 
 default_targets = {
     "codex":      {"path": home + "/.codex/AGENTS.md",
+                   "format": "raw-md", "enabled": True,
                    "last_target_hash": "", "last_synced_at": None},
     "gemini-cli": {"path": home + "/.gemini/GEMINI.md",
+                   "format": "raw-md", "enabled": True,
                    "last_target_hash": "", "last_synced_at": None},
     "windsurf":   {"path": home + "/.codeium/windsurf/memories/global_rules.md",
+                   "format": "raw-md", "enabled": True,
                    "last_target_hash": "", "last_synced_at": None},
 }
 
@@ -73,9 +98,14 @@ else:
         # Preserve old codex hash
         migrated["targets"]["codex"]["last_target_hash"] = state.get("last_codex_hash", "")
         state = migrated
-    # Ensure all default targets present (in case registry grew)
+    # Ensure all default targets present (in case registry grew).
+    # Does NOT overwrite user-added custom targets or user-modified enabled/path fields.
     for name, cfg in default_targets.items():
         state.setdefault("targets", {}).setdefault(name, cfg)
+    # Backfill format/enabled on existing targets that predate these fields
+    for name, tgt in state["targets"].items():
+        tgt.setdefault("format", "raw-md")
+        tgt.setdefault("enabled", True)
 json.dump(state, open(state_path, "w"), indent=2)
 PY
 
@@ -99,19 +129,46 @@ synced=()
 skipped=()
 conflicts=()
 failed=()
+disabled=()
 
-for target_name in codex gemini-cli windsurf; do
-  target_path=$(python3 -c "
+# Iterate all targets declared in state.json (built-ins + user-added custom)
+target_names=$(python3 -c "
+import json
+s = json.load(open('$STATE'))
+print('\n'.join(s['targets'].keys()))
+")
+
+for target_name in $target_names; do
+  # Per-target config
+  target_info=$(python3 -c "
 import json, os
 s = json.load(open('$STATE'))
-p = s['targets']['$target_name']['path']
-print(os.path.expanduser(p))
+t = s['targets']['$target_name']
+print(os.path.expanduser(os.path.expandvars(t['path'])))
+print('1' if t.get('enabled', True) else '0')
+print(t.get('format', 'raw-md'))
 ")
+  target_path=$(echo "$target_info" | sed -n '1p')
+  target_enabled=$(echo "$target_info" | sed -n '2p')
+  target_format=$(echo "$target_info" | sed -n '3p')
+
+  # Skip disabled
+  if [ "$target_enabled" != "1" ]; then
+    disabled+=("$target_name")
+    continue
+  fi
+
+  # Only raw-md supported in v1.2; skip Tier 2+ formats
+  if [ "$target_format" != "raw-md" ]; then
+    skipped+=("$target_name (format=$target_format, Tier 2+ not yet supported)")
+    continue
+  fi
+
   target_parent=$(dirname "$target_path")
 
   # Skip if product not installed (parent dir doesn't exist)
   if [ ! -d "$target_parent" ]; then
-    skipped+=("$target_name (not installed)")
+    skipped+=("$target_name (not installed: $target_parent missing)")
     continue
   fi
 
@@ -168,8 +225,11 @@ fi
   echo "- CLAUDE.md hash: ${CLAUDE_HASH:0:12}"
   [ ${#synced[@]}    -gt 0 ] && echo "- ✅ Synced: ${synced[*]}"
   if [ ${#skipped[@]}   -gt 0 ]; then
-    echo "- ⏭️  Skipped (not installed):"
+    echo "- ⏭️  Skipped:"
     for x in "${skipped[@]}"; do echo "  - $x"; done
+  fi
+  if [ ${#disabled[@]}  -gt 0 ]; then
+    echo "- 💤 Disabled (enabled=false in state.json): ${disabled[*]}"
   fi
   if [ ${#conflicts[@]} -gt 0 ]; then
     echo "- ⚠️  Conflicts (fail-closed, needs review):"

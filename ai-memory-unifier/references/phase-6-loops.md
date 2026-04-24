@@ -18,13 +18,17 @@ Use `mcp__scheduled-tasks__create_scheduled_task` (Claude Desktop's durable sche
 **Template**: `templates/scheduled-task-sync.template.md`
 **`notifyOnCompletion`**: `false` (runs quietly; log is the audit trail)
 
-**Targets** (Tier 1 — raw markdown global files). Each is enabled only if detected on the user's machine:
+**Targets are data-driven** — Loop 1 iterates all entries in `state.json` → `targets`. No hardcoded list in the loop. This means users can add their own custom targets without modifying skill files. See `references/custom-sync-targets.md`.
+
+**Built-in Tier 1 targets** (auto-populated into state.json on first init):
 
 | Target | Path | Detection signal |
 |--------|------|------------------|
 | `codex` | `~/.codex/AGENTS.md` | `~/.codex/` dir exists |
 | `gemini-cli` | `~/.gemini/GEMINI.md` | `~/.gemini/` dir exists |
 | `windsurf` | `~/.codeium/windsurf/memories/global_rules.md` | `~/.codeium/windsurf/` dir exists |
+
+**Custom user-added targets**: any additional raw-markdown global file. See `references/custom-sync-targets.md` for the exact snippet to add one.
 
 **Per-target state** in `~/.claude/reorg-log/state.json` (schema v2):
 
@@ -33,13 +37,21 @@ Use `mcp__scheduled-tasks__create_scheduled_task` (Claude Desktop's durable sche
   "version": 2,
   "last_claude_hash": "<SHA256 of CLAUDE.md at last sync>",
   "targets": {
-    "codex":      { "path": "...", "last_target_hash": "...", "last_synced_at": "..." },
+    "codex":      { "path": "...", "format": "raw-md", "enabled": true,
+                    "last_target_hash": "...", "last_synced_at": "..." },
     "gemini-cli": { ... },
-    "windsurf":   { ... }
+    "windsurf":   { ... },
+    "<custom-id>": { ... user-added entries ... }
   },
   "initialized_at": "..."
 }
 ```
+
+Per-target fields:
+- `path` — absolute path (or `~/`-style). Supports `$VAR` expansion.
+- `format` — `raw-md` is the only handled format in v1.2. Future: `json-field`, `yaml-field`, `project-md`.
+- `enabled` — set to `false` to temporarily skip this target without removing the entry (preserves last_target_hash for later re-enable).
+- `last_target_hash`, `last_synced_at` — managed by the loop; don't edit manually.
 
 **Logic** (summary; full prompt in `templates/scheduled-task-sync.template.md`):
 
@@ -56,9 +68,26 @@ Use `mcp__scheduled-tasks__create_scheduled_task` (Claude Desktop's durable sche
 
 **Key property**: each target is independent. A conflict on Windsurf doesn't block Codex from syncing.
 
+### Phase 6 — ask about user custom targets
+
+Before registering the Loop, Claude should prompt:
+
+> **Sync targets detected**: codex (installed), gemini-cli (not installed, will skip), windsurf (installed).
+>
+> Any other product you want auto-synced by this Loop? If it has a single global markdown file (one absolute path) that acts as its "global instructions", I can add it.
+>
+> Examples: an internal company agent, KimiClaw, Hermes, a forked tool. Skip if you're not sure.
+
+If the user mentions one, collect:
+- Short ID (kebab-case, e.g., `hermes`)
+- Absolute file path
+- Confirm it's a **raw-markdown** file (not JSON/YAML)
+
+Then add it to state.json by running the snippet in `references/custom-sync-targets.md`. No need to re-register the Loop — it picks up new state.json entries on next run.
+
 ### Tier 2 / Tier 3 targets
 
-Not handled by this loop in v1.1. See `references/product-registry.md` for the tier classification and planned timeline (v1.2, v1.3).
+Not handled by this loop in v1.2. See `references/product-registry.md` for the tier classification and planned timeline (v1.3+).
 
 ---
 

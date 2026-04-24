@@ -222,15 +222,17 @@ Exception: if the user explicitly asks "strip Cursor rules I've migrated to CLAU
 
 **Load**: `references/phase-6-loops.md` + `templates/scheduled-task-*.template.md`
 
-**Loop 1 — Memory Sync** (multi-target downstream):
+**Loop 1 — Memory Sync** (multi-target, data-driven):
 - Cron: `17 9 * * *` (daily ~09:17)
-- Reads `~/.claude/CLAUDE.md`; on change, writes to every detected Tier-1 target with header comment:
+- Reads `~/.claude/CLAUDE.md`; on change, writes to every enabled target in `state.json` with header comment
+- Built-in Tier-1 targets (auto-populated first run):
   - `~/.codex/AGENTS.md` (Codex CLI)
   - `~/.gemini/GEMINI.md` (Gemini CLI)
   - `~/.codeium/windsurf/memories/global_rules.md` (Windsurf)
+- **User custom targets**: during Phase 6, ask the user if they use any product not in the built-in list that has a single global markdown file — add it to `state.json` so Loop 1 syncs it too. See `references/custom-sync-targets.md`.
 - Per-target hash state; per-target fail-closed on external edit
 - Runs silently (no user notification)
-- Tier 2 / 3 targets planned for future versions
+- Tier 2 / 3 targets (JSON/YAML fields, project-local) planned for future versions
 
 **Loop 2 — Daily reorg scan**:
 - Cron: `23 21 * * *` (daily ~21:23)

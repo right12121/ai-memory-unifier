@@ -33,9 +33,10 @@ If you only use one tool and it's well-organized, this is overkill.
 
 - **Claude Code** — primary target; we write the new global CLAUDE.md + skills here
 - **Tier 1 sync targets** (Loop 1 writes daily, auto-detected): Codex CLI `~/.codex/AGENTS.md`, Gemini CLI `~/.gemini/GEMINI.md`, Windsurf `~/.codeium/windsurf/memories/global_rules.md`
+- **Custom user targets** (v1.2+): use a product we don't know? Tell Phase 6 its file path, or add it to `state.json` yourself via the snippet in [custom-sync-targets.md](./ai-memory-unifier/references/custom-sync-targets.md). Loop 1 is data-driven — anything you add gets synced automatically.
 - **Readable sources** (scanned in Phase 0; migrated content copied into CLAUDE.md/skills but original files left intact): Cursor, Aider, Continue, Cline, Zed, Amp, Qclaw/OpenClaw, and more (see [product-registry.md](./ai-memory-unifier/references/product-registry.md))
 - **User-mentioned products**: tell Phase 0 where they live and we scan them too
-- **Tier 2/3 sync targets** (Continue, Zed, Aider, Cline, Cursor): structured-config / project-local writes planned for v1.2+
+- **Tier 2/3 sync targets** (Continue, Zed, Aider, Cline, Cursor): structured-config / project-local writes planned for v1.3+
 
 ### Out of scope (server-side, no reliable local API)
 
@@ -117,9 +118,10 @@ MIT — see [LICENSE](./LICENSE).
 
 - **Claude Code** — 主要目标，新的全局 CLAUDE.md + skill 都在这
 - **Tier 1 同步目标**（Loop 1 每天自动写入，自动检测）：Codex CLI `~/.codex/AGENTS.md`、Gemini CLI `~/.gemini/GEMINI.md`、Windsurf `~/.codeium/windsurf/memories/global_rules.md`
+- **用户自定义 target**（v1.2+）：你用了我们不知道的产品？在 Phase 6 告诉我文件路径，或者用 [custom-sync-targets.md](./ai-memory-unifier/references/custom-sync-targets.md) 里的 snippet 自己加到 `state.json`。Loop 1 是数据驱动的 —— 你加什么它就同步什么。
 - **可读源**（Phase 0 扫描；内容复制进 CLAUDE.md / skill，原文件保留不动）：Cursor、Aider、Continue、Cline、Zed、Amp、Qclaw/OpenClaw 等（完整列表见 [product-registry.md](./ai-memory-unifier/references/product-registry.md)）
 - **用户补充的产品**：告诉 Phase 0 文件在哪，它就会扫
-- **Tier 2/3 同步目标**（Continue / Zed / Aider / Cline / Cursor）：结构化配置/项目级回写，计划在 v1.2+ 支持
+- **Tier 2/3 同步目标**（Continue / Zed / Aider / Cline / Cursor）：结构化配置/项目级回写，计划在 v1.3+ 支持
 
 ### 不在范围内（服务端存储，没有可靠的本地接口）
 
