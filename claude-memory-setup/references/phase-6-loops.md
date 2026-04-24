@@ -210,7 +210,7 @@ mcp__scheduled-tasks__create_scheduled_task(
 
 ## State file
 
-Created by Loop 1 if absent. Format:
+Canonical format in `templates/state.json.template`:
 
 ```json
 {
@@ -220,7 +220,7 @@ Created by Loop 1 if absent. Format:
 }
 ```
 
-Path: `~/.claude/reorg-log/state.json`.
+Path: `~/.claude/reorg-log/state.json`. Initialize once at the end of Phase 6 using the template (substitute `__ISO_DATETIME__`), or let Loop 1 bootstrap it on first run.
 
 ## Test immediately
 
